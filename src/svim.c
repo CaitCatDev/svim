@@ -24,16 +24,33 @@ struct _line_list_s {
 	void *prev;
 };
 
-static struct termios ori_termios = {0};
-static struct termios new_termios = {0};
-
 enum SVIM_KEYCODE {
 	KEY_NULL = 0,
 	CTRL_Q = 0x11,
 	CTRL_S = 0x13
 };
 
+enum SVIM_MODES {
+	COMMAND,
+	INSERT,
+	VISUAL,
+	VISUAL_BLOCK,
+	REPLACE,
+	CTRL,
+};
 
+typedef struct _svim_ctx_s {
+	enum SVIM_MODES mode;
+
+	line_list_t *head;
+	line_list_t *tail;
+
+	line_list_t *curline;
+
+	struct termios raw;
+	struct termios canon;
+	int israw; 
+} svim_ctx_t;
 
 line_list_t *svim_create_line(uint64_t size, const char *text) {
 	//Check parmeter size should be more than 0 
@@ -55,7 +72,7 @@ line_list_t *svim_create_line(uint64_t size, const char *text) {
 		return NULL;
 	}
 	output->size = size;
-
+  
 	if(text) {
 		strncat(output->line, text, size);
 		output->useage = strlen(text) + 1;
@@ -65,40 +82,59 @@ line_list_t *svim_create_line(uint64_t size, const char *text) {
 }
 
 int svim_get_termios_pair(struct termios *canonical, struct termios *raw) {
-	
+	if(tcgetattr(STDIN_FILENO, canonical) < 0) { //Get the original termios 
+		return -1;
+	}
+
+
+	*raw = *canonical;
+	raw->c_oflag &= ~(OPOST);
+	raw->c_lflag &= ~(ICANON | ISIG | ECHO | IEXTEN);
+	raw->c_iflag &= ~(ISTRIP | INPCK | BRKINT | IXON);
+
+	//Setup polling reads with small timeout 
+	raw->c_cc[VMIN] = 0; 
+	raw->c_cc[VTIME] = 0;
+
+	raw->c_cflag |= (CS8);
 }
 
+int svim_termios_set_mode(struct termios *termios) {
+	return tcsetattr(STDIN_FILENO, TCSAFLUSH, termios);
+}
+
+
 int main(int argc, char **argv) {
-	line_list_t *list = svim_create_line(strlen("Hello"), "Hello");
-	if(list == NULL) {
+	svim_ctx_t svim_ctx = { 0 };
+	int bytes;
+	char buf[1];
+	svim_ctx.head = svim_create_line(256, NULL);
+	svim_ctx.tail = svim_ctx.head;
+	svim_ctx.curline = svim_ctx.head;
+	if(svim_ctx.head == NULL) {
 		printf("Failed to allocate line: %m\n");
 		return -1;
 	}
-	char buf[1];
-	tcgetattr(STDIN_FILENO, &ori_termios);
-	new_termios = ori_termios;
-
-	/*Configure Raw Mode*/ 
-	new_termios.c_oflag &= ~(OPOST);//We want to handle this ourselves 
-	new_termios.c_lflag &= ~(ICANON | ISIG | ECHO | IEXTEN); 
-	new_termios.c_iflag &= ~(ISTRIP | INPCK | BRKINT | IXON);
+	svim_get_termios_pair(&svim_ctx.canon, &svim_ctx.raw);
 	
-	tcsetattr(STDIN_FILENO, TCSAFLUSH, &new_termios); //Set the new termios
-	while(read(STDIN_FILENO, buf, 1) != -1) {
+	svim_termios_set_mode(&svim_ctx.raw); //Set the new termios
+	while((bytes = read(STDIN_FILENO, buf, 1)) != -1) {
+		if(bytes == 0) {
+			continue;
+		} //Nothing input skip to next read;
 		fprintf(stderr,"%c", buf[0]);
 		if(buf[0] == CTRL_Q) {
 			break;
 		} else if (buf[0] == CTRL_S) {
 			FILE *fp = fopen("./output", "a+");
 			fseek(fp, 0, SEEK_SET);
-			fwrite(list->line, sizeof(char), list->useage, fp);
+			fwrite(svim_ctx.curline->line, sizeof(char), svim_ctx.curline->useage, fp);
 			fclose(fp);
 		} else {
-			list->line[list->useage] = buf[0];
-			list->useage++;			
+			svim_ctx.curline->line[svim_ctx.curline->useage] = buf[0];
+			svim_ctx.curline->useage++;			
 		}
 	}
-
-	tcsetattr(STDIN_FILENO, TCSAFLUSH, &ori_termios);
+	svim_termios_set_mode(&svim_ctx.canon);
 	return 0;
 }
