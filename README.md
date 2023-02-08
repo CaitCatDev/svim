@@ -1,7 +1,7 @@
-# fedit
+# svim
 ---
 
-Fooedit(Name may be subject to change) is a simple terminal based text edditor. Currently in early development. 
+svim is a simple modal terminal based text edditor. Inspired by vi,vim and nvim Currently in early development. 
 
 
 ## Project Structure 
@@ -15,5 +15,3 @@ The Unstable branch will be used for all code development before it's been teste
 - There is no gurantee it will compile straight away
 - The code is more likely to have bugs and flaws such as memory leaks when compaired to master branch 
 - But this code would be the most update commits.
-# svim
-# svim
