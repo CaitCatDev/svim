@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <string.h>
 
+#include <errno.h>
 #include <unistd.h>
 #include <termios.h>
 
@@ -26,28 +27,53 @@ struct _line_list_s {
 static struct termios ori_termios = {0};
 static struct termios new_termios = {0};
 
-enum SEDIT_KEYCODE {
+enum SVIM_KEYCODE {
 	KEY_NULL = 0,
 	CTRL_Q = 0x11,
 	CTRL_S = 0x13
 };
 
-line_list_t *sedit_create_line(uint64_t size, const char *text) {
-	line_list_t *output = calloc(1, sizeof(line_list_t));
 
+
+line_list_t *svim_create_line(uint64_t size, const char *text) {
+	//Check parmeter size should be more than 0 
+	//and if text is not NULL then it's length
+	//should be less than size 
+	if(size > 0 && text && strlen(text) >= size) {
+		errno = EINVAL;
+		return NULL;
+	}
+	
+	line_list_t *output = calloc(1, sizeof(line_list_t));
+	if(!output) {
+		return NULL;
+	}
+	
 	output->line = calloc(sizeof(char *), size);
+	if(output->line == NULL) {
+		free(output->line);
+		return NULL;
+	}
 	output->size = size;
 
 	if(text) {
 		strncat(output->line, text, size);
-		output->useage = strlen(text);
+		output->useage = strlen(text) + 1;
 	}
 
 	return output;
 }
 
+int svim_get_termios_pair(struct termios *canonical, struct termios *raw) {
+	
+}
+
 int main(int argc, char **argv) {
-	line_list_t *list = sedit_create_line(256, NULL);
+	line_list_t *list = svim_create_line(strlen("Hello"), "Hello");
+	if(list == NULL) {
+		printf("Failed to allocate line: %m\n");
+		return -1;
+	}
 	char buf[1];
 	tcgetattr(STDIN_FILENO, &ori_termios);
 	new_termios = ori_termios;
